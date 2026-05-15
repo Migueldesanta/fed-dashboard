@@ -1,8 +1,6 @@
 // src/lib/api.js
 // 所有外部API调用的统一入口
 
-import { FRED_SERIES } from './constants';
-
 const CACHE_TTL = 60 * 60 * 1000; // 1小时缓存
 const cache = {};
 
@@ -17,19 +15,43 @@ function setCache(key, data) {
   cache[key] = { data, ts: Date.now() };
 }
 
-// ── FRED API（通过Cloudflare Function代理）──────────────────
+// ── FRED API ─────────────────────────────────────────────────
+// 生产环境（Cloudflare Pages）：走 /api/fred 代理，隐藏 Key
+// 本地开发：直接调 FRED，Key 从 localStorage 读取
+async function fredFetch(seriesId, limit) {
+  const isProd = window.location.hostname !== 'localhost'
+    && window.location.hostname !== '127.0.0.1';
+
+  if (isProd) {
+    // Cloudflare Function 代理
+    const res = await fetch(
+      `/api/fred?series=${seriesId}&limit=${limit}`,
+      { signal: AbortSignal.timeout(10000) }
+    );
+    if (!res.ok) throw new Error(`FRED proxy error: ${res.status}`);
+    return res.json();
+  } else {
+    // 本地：直接调 FRED（Key 从 localStorage 或默认值）
+    const apiKey = localStorage.getItem('fred_key') || 'aec35073cfcd24002343239c7cf60522';
+    const url = new URL('https://api.stlouisfed.org/fred/series/observations');
+    url.searchParams.set('series_id', seriesId);
+    url.searchParams.set('api_key', apiKey);
+    url.searchParams.set('file_type', 'json');
+    url.searchParams.set('sort_order', 'asc');
+    url.searchParams.set('limit', String(limit));
+    const res = await fetch(url.toString(), { signal: AbortSignal.timeout(10000) });
+    if (!res.ok) throw new Error(`FRED direct error: ${res.status}`);
+    return res.json();
+  }
+}
+
 export async function fetchFredSeries(seriesId, limit = 52) {
   const cacheKey = `fred_${seriesId}_${limit}`;
   const cached = getCache(cacheKey);
   if (cached) return cached;
 
   try {
-    const res = await fetch(
-      `/api/fred?series=${seriesId}&limit=${limit}`,
-      { signal: AbortSignal.timeout(10000) }
-    );
-    if (!res.ok) throw new Error(`FRED API error: ${res.status}`);
-    const data = await res.json();
+    const data = await fredFetch(seriesId, limit);
     const observations = data.observations
       ?.filter(o => o.value !== '.')
       .map(o => ({

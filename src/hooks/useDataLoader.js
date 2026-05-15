@@ -15,32 +15,43 @@ export function useDataLoader() {
       const [resHist, effrHist, iorbData, sofrData, tgaHist] = await Promise.all([
         fetchFredSeries('WRESBAL', 52),
         fetchFredSeries('EFFR', 52),
-        fetchFredSeries('IORB', 10),
-        fetchFredSeries('SOFR', 10),
+        fetchFredSeries('IORB', 52),   // 多取确保有当期值
+        fetchFredSeries('SOFR', 52),   // 多取确保有当期值
         fetchFredSeries('WTREGEN', 52),
       ]);
 
-      const latestRes = resHist[resHist.length - 1];
-      const prevRes   = resHist[resHist.length - 2];
-      const latestEffr = effrHist[effrHist.length - 1];
-      const latestIorb = iorbData[iorbData.length - 1];
-      const latestSofr = sofrData[sofrData.length - 1];
+      const latestRes  = resHist[resHist.length - 1];
+      const prevRes    = resHist[resHist.length - 2];
       const latestTga  = tgaHist[tgaHist.length - 1];
 
-      const reserves = latestRes?.value * 1000 || null; // convert B$ to $B (already in B)
-      // WRESBAL is in billions, keep as billions
-      const reservesB = latestRes?.value || null;
-      const prevReservesB = prevRes?.value || null;
+      // ── 利率对齐：以EFFR最新日期为基准，找IORB和SOFR最近的值 ──
+      // FRED返回值单位均为百分比（如4.33 = 4.33%），差值×100 = bps
+      const latestEffr = effrHist[effrHist.length - 1];
+      const effrDate   = latestEffr?.date;
 
-      const effr = latestEffr?.value || null;
-      const iorb = latestIorb?.value || null;
-      const sofr = latestSofr?.value || null;
-      const tga  = latestTga?.value || null;
+      // IORB: 找离EFFR日期最近的值（IORB是周频，EFFR是日频）
+      function findNearest(series, targetDate) {
+        if (!series.length) return null;
+        if (!targetDate) return series[series.length - 1];
+        // prefer exact match, else last value before or on targetDate
+        const sorted = [...series].filter(d => d.date <= targetDate);
+        return sorted.length ? sorted[sorted.length - 1] : series[series.length - 1];
+      }
+
+      const matchedIorb = findNearest(iorbData, effrDate);
+      const matchedSofr = findNearest(sofrData, effrDate);
+
+      const reservesB     = latestRes?.value     ?? null;  // billions USD
+      const prevReservesB = prevRes?.value        ?? null;
+      const effr          = latestEffr?.value     ?? null;  // percent
+      const iorb          = matchedIorb?.value    ?? null;  // percent
+      const sofr          = matchedSofr?.value    ?? null;  // percent
+      const tga           = latestTga?.value      ?? null;  // billions USD
 
       dispatch({
         type: 'SET_FRED_DATA',
         payload: {
-          reserves: reservesB,       // in billions
+          reserves: reservesB,
           reservesHistory: resHist,
           effr, iorb, sofr, tga,
           effrHistory: effrHist,
@@ -48,29 +59,34 @@ export function useDataLoader() {
         }
       });
 
-      // Compute indicators
-      const effrIorb = (effr !== null && iorb !== null) ? ((effr - iorb) * 100).toFixed(1) : null;
-      const sofrIorb = (sofr !== null && iorb !== null) ? ((sofr - iorb) * 100).toFixed(1) : null;
-      const margin = reservesB !== null ? (reservesB - B_SCARCE / 10).toFixed(1) : null;
-      // B_SCARCE is in 亿美元 (100M), WRESBAL is in billions
-      // B_SCARCE = 2242.5 亿美元 = 224.25 billion USD
-      const bScarceB = B_SCARCE / 10; // convert to billions
-      const marginB = reservesB !== null ? (reservesB - bScarceB).toFixed(1) : null;
+      // ── 指标计算 ─────────────────────────────────────────────
+      // 差值单位：百分点 × 100 = bps
+      const effrIorb = (effr !== null && iorb !== null)
+        ? ((effr - iorb) * 100).toFixed(1) : null;
+      const sofrIorb = (sofr !== null && iorb !== null)
+        ? ((sofr - iorb) * 100).toFixed(1) : null;
+
+      // B_SCARCE = 2242.5 亿美元；WRESBAL单位 = 十亿美元(billions)
+      // 1 billion = 10 亿，所以 B_SCARCE / 10 = billions
+      const bScarceB = B_SCARCE / 10;
+      const marginB  = reservesB !== null ? (reservesB - bScarceB).toFixed(1) : null;
 
       let regime = 'Unknown';
       if (reservesB !== null) {
-        if (reservesB < bScarceB) regime = 'Scarce';
-        else if (reservesB < bScarceB * 1.5) regime = 'Ample';
-        else regime = 'Excess';
+        if (reservesB < bScarceB)        regime = 'Scarce';
+        else if (reservesB < bScarceB * 1.6) regime = 'Ample';
+        else                              regime = 'Excess';
       }
 
-      // Cliff risk detection
+      // 断崖风险：单周降幅 or 利差急升
       let cliffRisk = false;
       if (prevReservesB && reservesB) {
         const weeklyDrop = prevReservesB - reservesB;
+        // CLIFF_RISK.WEEKLY_DROP_THRESHOLD = 150 亿美元 = 15 billion
         if (weeklyDrop > CLIFF_RISK.WEEKLY_DROP_THRESHOLD / 10) cliffRisk = true;
       }
-      if (parseFloat(effrIorb) > CLIFF_RISK.EFFR_IORB_JUMP) cliffRisk = true;
+      // EFFR-IORB > 20bps 触发断崖
+      if (effrIorb !== null && parseFloat(effrIorb) > CLIFF_RISK.EFFR_IORB_JUMP) cliffRisk = true;
 
       // Lt: count triggered indicators
       let lt = 0;
