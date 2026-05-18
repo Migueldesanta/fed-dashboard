@@ -13,12 +13,18 @@ export function useDataLoader() {
 
     try {
       const [resHist, effrHist, iorbData, sofrData, tgaHist] = await Promise.all([
-        fetchFredSeries('WRESBAL', 52),
-        fetchFredSeries('EFFR', 52),
-        fetchFredSeries('IORB', 52),   // 多取确保有当期值
-        fetchFredSeries('SOFR', 52),   // 多取确保有当期值
-        fetchFredSeries('WTREGEN', 52),
+        fetchFredSeries('WRESBAL', 500),   // Large limit to skip old missing data
+        fetchFredSeries('EFFR', 500),
+        fetchFredSeries('IORB', 500),
+        fetchFredSeries('SOFR', 500),
+        fetchFredSeries('WTREGEN', 500),
       ]);
+
+      console.log('[FRED] resHist:', resHist.length, resHist[resHist.length - 1]);
+      console.log('[FRED] effrHist:', effrHist.length, effrHist[effrHist.length - 1]);
+      console.log('[FRED] iorbData:', iorbData.length, iorbData[iorbData.length - 1]);
+      console.log('[FRED] sofrData:', sofrData.length, sofrData[sofrData.length - 1]);
+      console.log('[FRED] tgaHist:', tgaHist.length, tgaHist[tgaHist.length - 1]);
 
       const latestRes  = resHist[resHist.length - 1];
       const prevRes    = resHist[resHist.length - 2];

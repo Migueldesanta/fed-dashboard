@@ -25,7 +25,7 @@ async function fredFetch(seriesId, limit) {
   if (isProd) {
     // Cloudflare Function 代理
     const res = await fetch(
-      `/api/fred?series=${seriesId}&limit=${limit}`,
+      `/api/fred?series=${seriesId}&limit=${limit}&sort_order=desc`,
       { signal: AbortSignal.timeout(10000) }
     );
     if (!res.ok) throw new Error(`FRED proxy error: ${res.status}`);
@@ -37,7 +37,7 @@ async function fredFetch(seriesId, limit) {
     url.searchParams.set('series_id', seriesId);
     url.searchParams.set('api_key', apiKey);
     url.searchParams.set('file_type', 'json');
-    url.searchParams.set('sort_order', 'asc');
+    url.searchParams.set('sort_order', 'desc');  // 降序，最新数据在前
     url.searchParams.set('limit', String(limit));
     const res = await fetch(url.toString(), { signal: AbortSignal.timeout(10000) });
     if (!res.ok) throw new Error(`FRED direct error: ${res.status}`);
@@ -45,7 +45,7 @@ async function fredFetch(seriesId, limit) {
   }
 }
 
-export async function fetchFredSeries(seriesId, limit = 52) {
+export async function fetchFredSeries(seriesId, limit = 500) {
   const cacheKey = `fred_${seriesId}_${limit}`;
   const cached = getCache(cacheKey);
   if (cached) return cached;
@@ -57,7 +57,10 @@ export async function fetchFredSeries(seriesId, limit = 52) {
       .map(o => ({
         date: o.date,
         value: parseFloat(o.value)
-      })) || [];
+      }))
+      .reverse() // reverse back to chronological (asc) order since API returns desc
+      .slice(-52)  // Take only last 52 valid observations
+      || [];
     setCache(cacheKey, observations);
     return observations;
   } catch (err) {

@@ -22,7 +22,7 @@ export async function onRequest(context) {
   fredUrl.searchParams.set('series_id', series);
   fredUrl.searchParams.set('api_key', apiKey);
   fredUrl.searchParams.set('file_type', 'json');
-  fredUrl.searchParams.set('sort_order', 'asc');
+  fredUrl.searchParams.set('sort_order', 'desc');  // Latest data first
   fredUrl.searchParams.set('limit', limit);
 
   try {
