@@ -47,34 +47,55 @@ export function useDataLoader() {
       const matchedIorb = findNearest(iorbData, effrDate);
       const matchedSofr = findNearest(sofrData, effrDate);
 
-      const reservesB     = latestRes?.value     ?? null;  // billions USD
-      const prevReservesB = prevRes?.value        ?? null;
+      // WRESBAL unit from FRED = billions USD (already in billions, no conversion needed)
+      // FRED series description: "Billions of U.S. Dollars"
+      // But verify: typical value ~3100 means $3.1T ✓
+      const reservesRaw   = latestRes?.value     ?? null;
+      const prevReservesRaw = prevRes?.value     ?? null;
+
+      // Sanity check: if value > 10000, likely in millions → convert to billions
+      const reservesB     = reservesRaw !== null
+        ? (reservesRaw > 10000 ? reservesRaw / 1000 : reservesRaw)
+        : null;
+      const prevReservesB = prevReservesRaw !== null
+        ? (prevReservesRaw > 10000 ? prevReservesRaw / 1000 : prevReservesRaw)
+        : null;
+
       const effr          = latestEffr?.value     ?? null;  // percent
       const iorb          = matchedIorb?.value    ?? null;  // percent
       const sofr          = matchedSofr?.value    ?? null;  // percent
-      const tga           = latestTga?.value      ?? null;  // billions USD
+      const tgaRaw        = latestTga?.value      ?? null;
+      const tga           = tgaRaw !== null
+        ? (tgaRaw > 10000 ? tgaRaw / 1000 : tgaRaw)
+        : null;
+
+      // Normalize history arrays too
+      const normalizeHist = arr => arr.map(d => ({
+        ...d,
+        value: d.value > 10000 ? d.value / 1000 : d.value
+      }));
 
       dispatch({
         type: 'SET_FRED_DATA',
         payload: {
           reserves: reservesB,
-          reservesHistory: resHist,
+          reservesHistory: normalizeHist(resHist),
           effr, iorb, sofr, tga,
           effrHistory: effrHist,
-          tgaHistory: tgaHist,
+          tgaHistory: normalizeHist(tgaHist),
         }
       });
 
       // ── 指标计算 ─────────────────────────────────────────────
-      // 差值单位：百分点 × 100 = bps
       const effrIorb = (effr !== null && iorb !== null)
         ? ((effr - iorb) * 100).toFixed(1) : null;
       const sofrIorb = (sofr !== null && iorb !== null)
         ? ((sofr - iorb) * 100).toFixed(1) : null;
 
-      // B_SCARCE = 2242.5 亿美元；WRESBAL单位 = 十亿美元(billions)
-      // 1 billion = 10 亿，所以 B_SCARCE / 10 = billions
-      const bScarceB = B_SCARCE / 10;
+      // B_SCARCE = 2242.5 (in paper's units = $B USD)
+      // WRESBAL after normalization is also in $B USD
+      // So direct comparison works: ~3100B vs 2242.5B
+      const bScarceB = B_SCARCE;  // 2242.5 billions USD
       const marginB  = reservesB !== null ? (reservesB - bScarceB).toFixed(1) : null;
 
       let regime = 'Unknown';
