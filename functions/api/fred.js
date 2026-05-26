@@ -16,7 +16,7 @@ export async function onRequest(context) {
     });
   }
 
-  const apiKey = env.FRED_API_KEY || 'aec35073cfcd24002343239c7cf60522';
+  const apiKey = env.FRED_API_KEY || 'put fred api key here';
 
   const fredUrl = new URL('https://api.stlouisfed.org/fred/series/observations');
   fredUrl.searchParams.set('series_id', series);
