@@ -4,10 +4,6 @@
 >
 > 基于自有研究 **[YUN2026]** 与 **[FEDS2026-019]** 双理论框架构建的实时流动性监测终端。
 
-<!-- [Live Demo](https://your-deploy-url.example) · [Methodology](#methodology) · [Companion Research](#related-research) -->
-
-![preview](docs/preview.png) <!-- TODO: 添加截图至 docs/preview.png -->
-
 ---
 
 ## Why this exists
